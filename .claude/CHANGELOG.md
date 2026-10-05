@@ -5,6 +5,23 @@
 
 # Changelog
 
+## [2026-10-05 15:30] - README badges; MSRV verified; hornet 0.2.0 noted
+
+**Author:** Erick Bourgeois
+
+### Changed
+- `README.md`: badge sections in bindy's layout (project status, CI/CD, code quality, technology, security, community). Kept only badges backed by something in this repo: Build and E2E workflows, CodeQL, Security Scan, OpenSSF Scorecard, the ADR-0005 coverage gate, ADD/CALM, Rust 1.74+, zero dependencies (ADR-0006), bindy v0.7.1 CRDs, the five release platforms, SPDX, SLSA Build L3, Cosign, signed commits, CycloneDX SBOM, threat model. Omitted bindy's Docker, Trivy, Kubernetes-version, codecov and regulatory-compliance badges: forage ships no image, never talks to a cluster, publishes coverage in its own workflow, and has no compliance documents.
+- MSRV `rust-version = 1.74` verified: `cargo +1.74 build --locked` and the full test suite pass.
+- `docs/adr/0006-own-small-dependencies.md`, roadmap 01: hornet-bind9 0.2.0 has since been released; the rule still keeps forage's own 492-line parser.
+
+### Why
+Match bindy's README; badges must state verifiable facts.
+
+### Impact
+- [ ] Breaking change
+- [ ] Config change only
+- [x] Documentation only
+
 ## [2026-10-05 15:00] - Zero third-party crates: own every dependency of 500 lines or less
 
 **Author:** Erick Bourgeois

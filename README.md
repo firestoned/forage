@@ -5,6 +5,52 @@
 
 # forage
 
+## Project Status
+
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+[![GitHub Release](https://img.shields.io/github/v/release/firestoned/forage)](https://github.com/firestoned/forage/releases/latest)
+[![GitHub commits since latest release](https://img.shields.io/github/commits-since/firestoned/forage/latest)](https://github.com/firestoned/forage/commits/main)
+[![Last Commit](https://img.shields.io/github/last-commit/firestoned/forage)](https://github.com/firestoned/forage/commits/main)
+
+## CI/CD Status
+
+[![Build](https://github.com/firestoned/forage/actions/workflows/build.yaml/badge.svg)](https://github.com/firestoned/forage/actions/workflows/build.yaml)
+[![E2E Tests](https://github.com/firestoned/forage/actions/workflows/e2e.yaml/badge.svg)](https://github.com/firestoned/forage/actions/workflows/e2e.yaml)
+
+## Code Quality
+
+[![Coverage gate](https://img.shields.io/badge/coverage%20gate-100%25%20lines%20%26%20functions-brightgreen)](docs/adr/0005-coverage-gate-and-published-reports.md)
+[![OpenSSF Scorecard](https://api.securityscorecards.dev/projects/github.com/firestoned/forage/badge)](https://api.securityscorecards.dev/projects/github.com/firestoned/forage)
+[![CodeQL](https://github.com/firestoned/forage/actions/workflows/codeql.yml/badge.svg)](https://github.com/firestoned/forage/actions/workflows/codeql.yml)
+[![Security Scan](https://github.com/firestoned/forage/actions/workflows/security-scan.yaml/badge.svg)](https://github.com/firestoned/forage/actions/workflows/security-scan.yaml)
+[![Architecture](https://img.shields.io/badge/architecture-ADD%20%7C%20CALM-blueviolet)](calm/README.md)
+
+## Technology & Compatibility
+
+[![Rust](https://img.shields.io/badge/rust-1.74+-orange.svg?logo=rust&logoColor=white)](https://www.rust-lang.org)
+[![Dependencies](https://img.shields.io/badge/dependencies-0-brightgreen)](docs/adr/0006-own-small-dependencies.md)
+[![bindy](https://img.shields.io/badge/bindy%20CRDs-v0.7.1-blue)](https://github.com/firestoned/bindy/releases/tag/v0.7.1)
+[![BIND9](https://img.shields.io/badge/BIND9-named.conf-blue)](https://www.isc.org/bind/)
+[![Linux](https://img.shields.io/badge/Linux-FCC624?logo=linux&logoColor=black)](https://www.linux.org/)
+[![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](https://www.apple.com/macos/)
+[![Windows](https://img.shields.io/badge/Windows-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/windows)
+
+## Security & Compliance
+
+[![SPDX](https://img.shields.io/badge/SPDX-License--Identifier-blue)](https://spdx.dev/)
+[![SLSA Build L3](https://img.shields.io/badge/SLSA-Build%20L3-blue)](docs/adr/0004-single-build-workflow.md)
+[![Cosign Signed](https://img.shields.io/badge/releases-signed-brightgreen.svg)](#verifying-a-release)
+[![Commits Signed](https://img.shields.io/badge/commits-signed-brightgreen.svg)](.github/workflows/build.yaml)
+[![SBOM](https://img.shields.io/badge/SBOM-CycloneDX-orange)](https://cyclonedx.org/)
+[![Threat Model](https://img.shields.io/badge/threat%20model-v1.2-purple)](docs/src/security/threat-model.md)
+
+## Community & Support
+
+[![Issues](https://img.shields.io/github/issues/firestoned/forage)](https://github.com/firestoned/forage/issues)
+[![Pull Requests](https://img.shields.io/github/issues-pr/firestoned/forage)](https://github.com/firestoned/forage/pulls)
+
+## Overview
+
 Import an existing BIND9 server into a [bindy](https://github.com/firestoned/bindy)-managed
 Kubernetes cluster. forage reads `named.conf`, parses the zone files it
 references, and prints `DNSZone` and record CRs as YAML or JSON on stdout.
