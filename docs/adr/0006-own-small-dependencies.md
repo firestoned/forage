@@ -21,7 +21,8 @@ formats and prints two text formats.
 
 The cost of waiting on upstream became concrete on 2026-10-05: hornet-bind9
 0.1 dropped the record after a quoted TXT or a one-line SOA and read an
-inherited owner as `IN`. The fix existed upstream but was unreleased, so forage
+inherited owner as `IN`. The fix existed upstream but was unreleased at the time (hornet-bind9
+0.2.0 shipped later the same day), so forage
 could only pin the bugs with ignored tests and wait.
 
 What forage actually uses from each crate, measured on 2026-10-05:
@@ -102,6 +103,9 @@ read-until helper in the named.conf tokenizer) rather than an exception.
 - Log lines lose ANSI colour and change format slightly (same level names,
   same messages). Nothing parses them; the README documents stderr as
   human-oriented.
+- hornet-bind9 0.2.0, released after this decision, does not change it: the
+  slice forage uses is 492 owned lines, inside the budget, so the rule keeps
+  forage's own parser.
 - hornet-bind9 remains a fine library for tools that need its full surface
   (writing, validating, the whole named.conf grammar). forage did not.
 - The rule is a default, not a ban: crypto, TLS, compression or anything

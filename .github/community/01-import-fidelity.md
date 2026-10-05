@@ -31,7 +31,7 @@ ADR.
   - a blank owner (inherit the previous name) is read as owner `IN`, so the
     record is imported under the wrong name.
 
-  All three pass against hornet's unreleased 0.2 parser (verified 2026-10-05
+  All three also pass against hornet's 0.2 parser (released 2026-10-05; verified
   with a path dependency; forage's 53 unit and 22 CLI tests also pass on it).
   (The basic fixture keeps its TXT last because the golden files pin that
   order.)
