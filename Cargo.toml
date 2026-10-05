@@ -1,0 +1,23 @@
+# Copyright (c) 2025 Erick Bourgeois, firestoned
+# SPDX-License-Identifier: Apache-2.0
+
+[package]
+name        = "forage"
+version     = "0.1.0"
+edition     = "2021"
+rust-version = "1.74"
+license     = "Apache-2.0"
+repository  = "https://github.com/firestoned/forage"
+homepage    = "https://github.com/firestoned/forage"
+description = "Import an existing BIND9 named.conf into a bindy-managed Kubernetes cluster as native CRD resources"
+keywords    = ["dns", "bind9", "kubernetes", "bindy", "named-conf"]
+categories  = ["command-line-utilities"]
+authors     = ["Erick Bourgeois <erick@firestoned.io>"]
+
+[[bin]]
+name = "forage"
+path = "src/main.rs"
+
+[dependencies]
+# None, by policy (ADR-0006, .claude/rules/dependencies.md): when what forage
+# uses from a crate is 500 lines or less, forage owns that code instead.

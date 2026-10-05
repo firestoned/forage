@@ -1,0 +1,224 @@
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: DNSZone
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+  name: example-com
+  namespace: forage-test
+spec:
+  nameServers:
+  - hostname: ns1.example.com.
+    ipv4Address: 192.0.2.1
+  - hostname: ns2.example.com.
+    ipv4Address: 192.0.2.2
+  recordsFrom:
+  - selector:
+      matchLabels:
+        bindy.firestoned.io/zone: example.com
+  soaRecord:
+    adminEmail: hostmaster.example.com.
+    expire: 604800
+    negativeTtl: 86400
+    primaryNs: ns1.example.com.
+    refresh: 3600
+    retry: 600
+    serial: 2026100501
+  ttl: 3600
+  zoneName: example.com
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: DNSZone
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+  name: example-org
+  namespace: forage-test
+spec:
+  recordsFrom:
+  - selector:
+      matchLabels:
+        bindy.firestoned.io/zone: example.org
+  soaRecord:
+    adminEmail: admin.example.org.
+    expire: 604800
+    negativeTtl: 86400
+    primaryNs: ns1.example.org.
+    refresh: 3600
+    retry: 600
+    serial: 0
+  zoneName: example.org
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: ARecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com-api-a-0
+  namespace: forage-test
+spec:
+  ipv4Addresses:
+  - 203.0.113.5
+  name: api
+  ttl: 300
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: ARecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com-mail-a-1
+  namespace: forage-test
+spec:
+  ipv4Addresses:
+  - 198.51.100.25
+  name: mail
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: ARecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com-ns1-a-2
+  namespace: forage-test
+spec:
+  ipv4Addresses:
+  - 192.0.2.1
+  name: ns1
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: ARecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com-ns2-a-3
+  namespace: forage-test
+spec:
+  ipv4Addresses:
+  - 192.0.2.2
+  name: ns2
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: ARecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com-sip-a-4
+  namespace: forage-test
+spec:
+  ipv4Addresses:
+  - 198.51.100.30
+  name: sip
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: ARecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com-www-a-5
+  namespace: forage-test
+spec:
+  ipv4Addresses:
+  - 198.51.100.10
+  - 198.51.100.11
+  name: www
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: AAAARecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com-www-aaaa-0
+  namespace: forage-test
+spec:
+  ipv6Addresses:
+  - 2001:db8::10
+  name: www
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: CNAMERecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com-docs-cname-0
+  namespace: forage-test
+spec:
+  name: docs
+  target: www.example.com.
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: MXRecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com---mx-0
+  namespace: forage-test
+spec:
+  mailServer: mail.example.com.
+  name: '@'
+  priority: 10
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: SRVRecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com--sip--tcp-srv-0
+  namespace: forage-test
+spec:
+  name: _sip._tcp
+  port: 5060
+  priority: 10
+  target: sip.example.com.
+  weight: 60
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: CAARecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com---caa-0
+  namespace: forage-test
+spec:
+  flags: 0
+  name: '@'
+  tag: issue
+  value: letsencrypt.org
+---
+apiVersion: bindy.firestoned.io/v1beta1
+kind: TXTRecord
+metadata:
+  labels:
+    bindy.firestoned.io/managed-by: forage
+    bindy.firestoned.io/source: named-conf-import
+    bindy.firestoned.io/zone: example.com
+  name: forage-example-com---txt-0
+  namespace: forage-test
+spec:
+  name: '@'
+  text:
+  - v=spf1 mx -all

@@ -1,0 +1,60 @@
+# Copyright (c) 2025 Erick Bourgeois, firestoned
+# SPDX-License-Identifier: Apache-2.0
+#
+# Daily dependency and secret scan. New RustSec advisories land without any
+# change to this repository, so the PR-time scan in build.yaml is not enough
+# on its own (ADR-0004). A failing scheduled run is the signal to cut a patch
+# release.
+
+name: Scheduled Security Scan
+
+on:
+  workflow_call: {}
+  schedule:
+    - cron: '0 0 * * *'  # Daily at midnight UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  cargo-audit:
+    name: RustSec Advisory Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Run cargo-audit
+        uses: firestoned/github-actions/rust/security-scan@d0d51c638a90bffc2a1567fe7af112b37fe8854c # v1.3.7
+        with:
+          cargo-audit-version: "0.22.0"
+          upload-artifact-name: cargo-audit-report-scheduled-${{ github.run_number }}
+
+  cargo-deny:
+    name: Dependencies, Licenses, Sources
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Run cargo-deny
+        run: make cargo-deny
+
+  gitleaks:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0  # scan the full history
+
+      - name: Run gitleaks
+        run: make gitleaks

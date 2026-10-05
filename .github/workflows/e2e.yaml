@@ -1,0 +1,213 @@
+# Copyright (c) 2025 Erick Bourgeois, firestoned
+# SPDX-License-Identifier: Apache-2.0
+#
+# Reusable end-to-end test workflow (ADR-0003).
+#
+# forage's contract is that its output is accepted by bindy. These suites run
+# the release binary against a kind cluster holding bindy's real CRDs, pinned
+# by BINDY_VERSION in the Makefile:
+#
+#   e2e-schema   server-side dry run with strict field validation, for each
+#                CLI variant (flags, filters, JSON stream): every emitted
+#                manifest is accepted, no unknown or misspelt fields
+#   e2e-apply    real apply; object count matches the stream; stored specs
+#                equal emitted specs; each zone's selector matches exactly its
+#                records; re-apply is a no-op; output is deterministic
+#   e2e-update   re-import after a zone change reconfigures and creates only
+#                what changed
+#
+# A separate `coverage` job runs both suites against an instrumented build
+# and publishes the e2e coverage report (ADR-0005).
+#
+# Each job maps 1:1 to a Makefile target (workflows delegate logic to the
+# Makefile per repo convention) and owns its own kind cluster, which is why
+# they run concurrently.
+#
+# Build once: build.yaml calls this with `binary-artifact` set to the binary
+# its `build` job already uploaded, and the local `build` job is skipped.
+# Called without it (workflow_dispatch, the Dependabot gate, or a PR that
+# only touches the e2e harness), this workflow builds the binary itself.
+
+name: E2E Tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/e2e.yaml'
+      - 'tests/e2e/**'
+      - 'tests/fixtures/**'
+  workflow_call:
+    inputs:
+      binary-artifact:
+        description: 'Name of an artifact in this run holding target/x86_64-unknown-linux-gnu/release/forage; empty builds it here'
+        required: false
+        type: string
+        default: ''
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    name: Build forage
+    runs-on: ubuntu-latest
+    if: inputs.binary-artifact == ''
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Setup Rust build environment
+        uses: firestoned/github-actions/rust/setup-rust-build@d0d51c638a90bffc2a1567fe7af112b37fe8854c # v1.3.7
+        with:
+          target: x86_64-unknown-linux-gnu
+
+      - name: Build binary
+        uses: firestoned/github-actions/rust/build-binary@d0d51c638a90bffc2a1567fe7af112b37fe8854c # v1.3.7
+        with:
+          binary-name: forage
+          target: x86_64-unknown-linux-gnu
+          extra-args: --locked
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: e2e-forage-binary
+          path: target/x86_64-unknown-linux-gnu/release/forage
+          retention-days: 1
+          if-no-files-found: error
+
+  suite:
+    name: ${{ matrix.name }}
+    needs: build
+    # `build` is skipped when the caller supplies the binary.
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One suite breaking should not hide the state of the other.
+      fail-fast: false
+      matrix:
+        include:
+          - target: e2e-schema
+            name: Schema (kind, bindy CRDs, strict)
+            cluster: kind-forage-e2e-schema
+          - target: e2e-apply
+            name: Apply, round-trip, selectors, idempotency (kind, bindy CRDs)
+            cluster: kind-forage-e2e-apply
+          - target: e2e-update
+            name: Re-import after a zone change (kind, bindy CRDs)
+            cluster: kind-forage-e2e-update
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Kind
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          install_only: true
+          version: v0.24.0
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: 'v1.31.0'
+
+      - name: Download the forage binary
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ inputs.binary-artifact || 'e2e-forage-binary' }}
+          path: dist
+
+      # KEEP_CLUSTER stops the suite from deleting its kind cluster, so the
+      # diagnostics step below has something left to inspect. The runner is
+      # ephemeral; the explicit cleanup step still runs.
+      - name: Run ${{ matrix.target }}
+        env:
+          KEEP_CLUSTER: '1'
+          FORAGE_BIN: dist/forage
+        run: make ${{ matrix.target }}
+
+      - name: Dump Kubernetes diagnostics on failure
+        if: failure()
+        env:
+          CTX: ${{ matrix.cluster }}
+        run: make e2e-diagnostics CONTEXT="$CTX"
+
+      - name: Delete the kind cluster
+        if: always()
+        env:
+          CTX: ${{ matrix.cluster }}
+        run: kind delete cluster --name "${CTX#kind-}" 2>/dev/null || true
+
+  # ── e2e coverage (ADR-0005) ────────────────────────────────────────────────
+  # Both suites again, against an instrumented debug build, to measure which
+  # code the contract checks exercise. Separate from `suite` so the suites
+  # keep testing the exact binary that ships. Reported, not gated.
+  coverage:
+    name: Coverage - E2E
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Cache cargo dependencies
+        uses: firestoned/github-actions/rust/cache-cargo@d0d51c638a90bffc2a1567fe7af112b37fe8854c # v1.3.7
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@e407f7bafb71fd004bc5c2da3032e5470cbb6ef0 # v2.87.24
+        with:
+          tool: cargo-llvm-cov
+
+      - name: Install Kind
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+        with:
+          install_only: true
+          version: v0.24.0
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5
+        with:
+          version: 'v1.31.0'
+
+      # Runs all three suites on one cluster; writes the summary table to
+      # $GITHUB_STEP_SUMMARY.
+      - name: Run e2e suites with coverage
+        run: make e2e-coverage
+
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: coverage-e2e
+          path: target/coverage/e2e/
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Dump Kubernetes diagnostics on failure
+        if: failure()
+        run: make e2e-diagnostics CONTEXT=kind-forage-e2e-coverage
+
+  # Single required check for callers of this workflow: green only when every
+  # suite (and the e2e coverage run) is green.
+  e2e:
+    name: E2E gate
+    needs: [suite, coverage]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check suite results
+        env:
+          SUITES: ${{ needs.suite.result }}
+          COVERAGE: ${{ needs.coverage.result }}
+        run: |
+          echo "Suite matrix: $SUITES, e2e coverage: $COVERAGE"
+          [ "$SUITES" = "success" ] && [ "$COVERAGE" = "success" ]

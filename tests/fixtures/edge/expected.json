@@ -1,0 +1,269 @@
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "DNSZone",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import"
+    },
+    "name": "example-com",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "nameServers": [
+      {
+        "hostname": "ns1.example.com.",
+        "ipv4Address": "192.0.2.53"
+      }
+    ],
+    "recordsFrom": [
+      {
+        "selector": {
+          "matchLabels": {
+            "bindy.firestoned.io/zone": "example.com"
+          }
+        }
+      }
+    ],
+    "soaRecord": {
+      "adminEmail": "hostmaster.example.com.",
+      "expire": 604800,
+      "negativeTtl": 300,
+      "primaryNs": "ns1.example.com.",
+      "refresh": 3600,
+      "retry": 600,
+      "serial": 2026100501
+    },
+    "ttl": 600,
+    "zoneName": "example.com"
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "DNSZone",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import"
+    },
+    "name": "example-net",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "recordsFrom": [
+      {
+        "selector": {
+          "matchLabels": {
+            "bindy.firestoned.io/zone": "example.net"
+          }
+        }
+      }
+    ],
+    "soaRecord": {
+      "adminEmail": "admin.example.net.",
+      "expire": 604800,
+      "negativeTtl": 86400,
+      "primaryNs": "ns1.example.net.",
+      "refresh": 3600,
+      "retry": 600,
+      "serial": 0
+    },
+    "zoneName": "example.net"
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "DNSZone",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import"
+    },
+    "name": "example-org",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "recordsFrom": [
+      {
+        "selector": {
+          "matchLabels": {
+            "bindy.firestoned.io/zone": "example.org"
+          }
+        }
+      }
+    ],
+    "soaRecord": {
+      "adminEmail": "admin.example.org.",
+      "expire": 604800,
+      "negativeTtl": 86400,
+      "primaryNs": "ns1.example.org.",
+      "refresh": 3600,
+      "retry": 600,
+      "serial": 0
+    },
+    "zoneName": "example.org"
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "DNSZone",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import"
+    },
+    "name": "example-edu",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "recordsFrom": [
+      {
+        "selector": {
+          "matchLabels": {
+            "bindy.firestoned.io/zone": "example.edu"
+          }
+        }
+      }
+    ],
+    "soaRecord": {
+      "adminEmail": "admin.example.edu.",
+      "expire": 604800,
+      "negativeTtl": 86400,
+      "primaryNs": "ns1.example.edu.",
+      "refresh": 3600,
+      "retry": 600,
+      "serial": 0
+    },
+    "zoneName": "example.edu"
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "ARecord",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import",
+      "bindy.firestoned.io/zone": "example.com"
+    },
+    "name": "forage-example-com-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc-dddddddddddddddddddddddddddddddddddddddd-t",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "ipv4Addresses": [
+      "192.0.2.99"
+    ],
+    "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb.ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc.dddddddddddddddddddddddddddddddddddddddd.tail"
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "ARecord",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import",
+      "bindy.firestoned.io/zone": "example.com"
+    },
+    "name": "forage-example-com-mx-a-1",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "ipv4Addresses": [
+      "192.0.2.25"
+    ],
+    "name": "mx"
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "ARecord",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import",
+      "bindy.firestoned.io/zone": "example.com"
+    },
+    "name": "forage-example-com-ns1-a-2",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "ipv4Addresses": [
+      "192.0.2.53"
+    ],
+    "name": "ns1"
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "ARecord",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import",
+      "bindy.firestoned.io/zone": "example.com"
+    },
+    "name": "forage-example-com-www-a-3",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "ipv4Addresses": [
+      "192.0.2.80"
+    ],
+    "name": "www"
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "MXRecord",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import",
+      "bindy.firestoned.io/zone": "example.com"
+    },
+    "name": "forage-example-com---mx-0",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "mailServer": "mx.example.com.",
+    "name": "@",
+    "priority": 20
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "CNAMERecord",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import",
+      "bindy.firestoned.io/zone": "example.com"
+    },
+    "name": "forage-example-com-alias-cname-0",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "name": "alias",
+    "target": "www."
+  }
+}
+{
+  "apiVersion": "bindy.firestoned.io/v1beta1",
+  "kind": "ARecord",
+  "metadata": {
+    "labels": {
+      "bindy.firestoned.io/managed-by": "forage",
+      "bindy.firestoned.io/source": "named-conf-import",
+      "bindy.firestoned.io/zone": "example.edu"
+    },
+    "name": "forage-example-edu-www-a-0",
+    "namespace": "forage-test"
+  },
+  "spec": {
+    "ipv4Addresses": [
+      "198.51.100.80"
+    ],
+    "name": "www"
+  }
+}

@@ -1,0 +1,8 @@
+; Copyright (c) 2025 Erick Bourgeois, firestoned
+; SPDX-License-Identifier: Apache-2.0
+$TTL 300
+@         IN SOA ns1.example.net. hostmaster.example.net. 1 3600 600 604800 300
+@         IN NS  ns1.example.net.
+ns1       IN A   192.0.2.53
+@         IN TXT "v=spf1 -all"
+_sip._tcp IN SRV 10 60 5060 sip.example.net.

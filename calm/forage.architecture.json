@@ -1,0 +1,202 @@
+{
+  "$schema": "https://calm.finos.org/release/1.2/meta/calm.json",
+  "nodes": [
+    {
+      "unique-id": "platform-operator",
+      "node-type": "actor",
+      "name": "Platform Operator",
+      "description": "Person migrating an existing BIND9 server into bindy. Runs forage on a host that can read the BIND9 configuration, reviews the output, and applies it with kubectl under their own Kubernetes credentials."
+    },
+    {
+      "unique-id": "bind9-host",
+      "node-type": "system",
+      "name": "BIND9 Host Filesystem",
+      "description": "The existing (non-Kubernetes) BIND9 server's configuration tree, or a copy of it. forage only reads it; it never connects to named or to rndc (ADR-0001)."
+    },
+    {
+      "unique-id": "named-conf",
+      "node-type": "data-asset",
+      "name": "named.conf",
+      "description": "BIND9 configuration (and its include files). Supplies zone names, zone types and zone-file paths."
+    },
+    {
+      "unique-id": "zone-files",
+      "node-type": "data-asset",
+      "name": "Zone Files",
+      "description": "RFC 1035 master files referenced by primary zones. Supplies the SOA, NS glue and the A, AAAA, CNAME, MX, TXT, SRV and CAA records forage maps."
+    },
+    {
+      "unique-id": "forage-cli",
+      "node-type": "system",
+      "name": "forage CLI",
+      "description": "Stateless, one-shot Rust binary (ADR-0001) with no third-party crates (ADR-0006). Reads named.conf and zone files, maps them to bindy CRD manifests, prints them to stdout and exits. Holds no credentials, opens no network connections and keeps no state between runs.",
+      "development-language": "Rust"
+    },
+    {
+      "unique-id": "parsers",
+      "node-type": "service",
+      "name": "named.conf / Zone-File Parsers",
+      "description": "src/named_conf.rs and src/zone_file.rs: forage's own parsers for exactly the constructs it maps (ADR-0006). named.conf is read as a generic statement tree from which zone, options and include statements are taken; zone files follow RFC 1035 master-file rules. Lines that do not parse are reported, never silently dropped."
+    },
+    {
+      "unique-id": "mapper",
+      "node-type": "service",
+      "name": "Mapper",
+      "description": "src/mapper.rs: turns the parsed AST into DNSZone and record manifests using the hand-written wire-format structs in src/crd.rs (ADR-0002), rendered by forage's own JSON and YAML writers (src/json.rs, src/yaml.rs). Collapses multi-address A/AAAA sets; folds SOA and NS into the DNSZone."
+    },
+    {
+      "unique-id": "manifest-stream",
+      "node-type": "data-asset",
+      "name": "Manifest Stream (stdout)",
+      "description": "YAML (or JSON) stream of bindy CRs: DNSZone first, then record CRs, all labelled bindy.firestoned.io/managed-by=forage. The only output forage produces; diagnostics go to stderr."
+    },
+    {
+      "unique-id": "kubectl",
+      "node-type": "service",
+      "name": "kubectl",
+      "description": "The operator's own Kubernetes client. forage does not apply anything itself; the operator pipes or reviews the stream and applies it with their own RBAC."
+    },
+    {
+      "unique-id": "k8s-api",
+      "node-type": "system",
+      "name": "Kubernetes API Server",
+      "description": "Target cluster control plane. Admission validates every manifest against the bindy CRD OpenAPI schema and CEL rules before it is stored."
+    },
+    {
+      "unique-id": "bindy-crds",
+      "node-type": "data-asset",
+      "name": "bindy CRDs",
+      "description": "DNSZone, ARecord, AAAARecord, CNAMERecord, MXRecord, TXTRecord, SRVRecord and CAARecord (bindy.firestoned.io/v1beta1). The contract forage's output must satisfy; verified in CI against a pinned bindy release (ADR-0003)."
+    },
+    {
+      "unique-id": "bindy-operator",
+      "node-type": "service",
+      "name": "bindy Operator",
+      "description": "Reconciles the imported CRs into BIND9 instances. Outside forage's scope; listed because it is the consumer the manifests are written for."
+    }
+  ],
+  "relationships": [
+    {
+      "unique-id": "compose-forage",
+      "description": "forage is one binary: its own parsers and the mapper, no third-party crates",
+      "relationship-type": {
+        "composed-of": {
+          "container": "forage-cli",
+          "nodes": ["parsers", "mapper"]
+        }
+      }
+    },
+    {
+      "unique-id": "compose-bind9-host",
+      "description": "The BIND9 host holds the configuration and zone files",
+      "relationship-type": {
+        "composed-of": {
+          "container": "bind9-host",
+          "nodes": ["named-conf", "zone-files"]
+        }
+      }
+    },
+    {
+      "unique-id": "operator-runs-forage",
+      "description": "The operator runs forage, reviews its output and applies it",
+      "relationship-type": {
+        "interacts": {
+          "actor": "platform-operator",
+          "nodes": ["forage-cli", "kubectl"]
+        }
+      }
+    },
+    {
+      "unique-id": "parsers-read-named-conf",
+      "description": "reads named.conf and includes (local file I/O, read-only)",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "parsers" },
+          "destination": { "node": "named-conf" }
+        }
+      }
+    },
+    {
+      "unique-id": "parsers-read-zone-files",
+      "description": "reads zone files resolved from the file option (local file I/O, read-only)",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "parsers" },
+          "destination": { "node": "zone-files" }
+        }
+      }
+    },
+    {
+      "unique-id": "mapper-uses-parsers",
+      "description": "maps the parsed AST",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "mapper" },
+          "destination": { "node": "parsers" }
+        }
+      }
+    },
+    {
+      "unique-id": "mapper-writes-stream",
+      "description": "prints manifests to stdout",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "mapper" },
+          "destination": { "node": "manifest-stream" }
+        }
+      }
+    },
+    {
+      "unique-id": "kubectl-reads-stream",
+      "description": "kubectl apply -f - (pipe or reviewed file)",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "kubectl" },
+          "destination": { "node": "manifest-stream" }
+        }
+      }
+    },
+    {
+      "unique-id": "kubectl-applies",
+      "description": "create/patch bindy CRs with the operator's credentials",
+      "protocol": "HTTPS",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "kubectl" },
+          "destination": { "node": "k8s-api" }
+        }
+      }
+    },
+    {
+      "unique-id": "api-validates-against-crds",
+      "description": "admission validates every manifest against the CRD schema",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "k8s-api" },
+          "destination": { "node": "bindy-crds" }
+        }
+      }
+    },
+    {
+      "unique-id": "mapper-targets-crds",
+      "description": "hand-written structs mirror the CRD wire format (ADR-0002)",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "mapper" },
+          "destination": { "node": "bindy-crds" }
+        }
+      }
+    },
+    {
+      "unique-id": "operator-watches-api",
+      "description": "watches and reconciles the imported CRs",
+      "protocol": "HTTPS",
+      "relationship-type": {
+        "connects": {
+          "source": { "node": "bindy-operator" },
+          "destination": { "node": "k8s-api" }
+        }
+      }
+    }
+  ]
+}

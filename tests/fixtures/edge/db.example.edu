@@ -1,0 +1,3 @@
+; Copyright (c) 2025 Erick Bourgeois, firestoned
+; SPDX-License-Identifier: Apache-2.0
+www     IN A    198.51.100.80
