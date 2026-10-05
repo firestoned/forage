@@ -1,115 +1,110 @@
 // Copyright (c) 2025 Erick Bourgeois, firestoned
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
-//! forage — Import an existing BIND9 named.conf into a bindy-managed
+//! forage: import an existing BIND9 named.conf into a bindy-managed
 //! Kubernetes cluster as native CRD resources.
-//!
-//! Phase 1: one-time YAML dump to stdout.
 //!
 //! ```text
 //! forage --conf /etc/bind/named.conf | kubectl apply -f -
 //! ```
+//!
+//! No third-party crates (ADR-0006): parsing, serialization, argument
+//! handling and logging are modules of this crate.
 
-use anyhow::{Context, Result};
-use clap::Parser;
-use tracing::info;
-
+#[macro_use]
+mod log;
+mod cli;
 mod crd;
+mod error;
+mod json;
 mod mapper;
+mod named_conf;
+#[cfg(test)]
+mod test_support;
+mod yaml;
+mod zone_file;
 
-use mapper::Mapper;
+use std::process::ExitCode;
 
-/// forage — convert a BIND9 named.conf into bindy Kubernetes CRD manifests
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Cli {
-    /// Path to named.conf
-    #[arg(long, short = 'c', default_value = "/etc/bind/named.conf")]
-    conf: std::path::PathBuf,
+use cli::{Cli, Command, OutputFormat};
+use error::{Context, Result};
+use json::Value;
+use mapper::{Mapper, MapperConfig};
 
-    /// Base directory for resolving relative zone-file paths.
-    /// Defaults to the `directory` option in named.conf, then the named.conf parent dir.
-    #[arg(long)]
-    zone_dir: Option<std::path::PathBuf>,
+/// Exit status for usage errors, as clap used.
+const USAGE_EXIT: u8 = 2;
 
-    /// Kubernetes namespace for emitted resources
-    #[arg(long, default_value = "bindy-system")]
-    namespace: String,
-
-    /// Value for DNSZoneSpec.cluster_ref (optional)
-    #[arg(long)]
-    cluster_ref: Option<String>,
-
-    /// Only export zones matching this glob pattern (e.g. "*.example.com")
-    #[arg(long, default_value = "*")]
-    zone_filter: String,
-
-    /// Emit only DNSZone resources — skip individual record CRs
-    #[arg(long)]
-    skip_records: bool,
-
-    /// Comma-separated record types to include (default: all).
-    /// Valid values: A,AAAA,CNAME,MX,TXT,SRV,CAA
-    #[arg(long)]
-    record_types: Option<String>,
-
-    /// Output format
-    #[arg(long, default_value = "yaml", value_parser = ["yaml", "json"])]
-    output: String,
-
-    /// Enable debug-level logging
-    #[arg(long, short = 'd')]
-    debug: bool,
+fn main() -> ExitCode {
+    match cli::parse(std::env::args().skip(1)) {
+        Ok(Command::Help) => {
+            print!("{}", cli::help_text());
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Version) => {
+            println!("{}", cli::version_text());
+            ExitCode::SUCCESS
+        }
+        Ok(Command::Run(cli)) => {
+            log::set_level(log::level_from(
+                cli.debug,
+                std::env::var("RUST_LOG").ok().as_deref(),
+            ));
+            match run(&cli) {
+                Ok(output) => {
+                    print!("{output}");
+                    ExitCode::SUCCESS
+                }
+                Err(err) => {
+                    eprintln!("Error: {err}");
+                    ExitCode::FAILURE
+                }
+            }
+        }
+        Err(usage) => {
+            eprint!("{usage}");
+            ExitCode::from(USAGE_EXIT)
+        }
+    }
 }
 
-fn main() -> Result<()> {
-    let cli = Cli::parse();
-    init_tracing(cli.debug);
-
+/// Reads `cli.conf`, maps it, and renders the manifest stream.
+///
+/// # Errors
+/// When named.conf cannot be read or parsed.
+fn run(cli: &Cli) -> Result<String> {
     info!("forage v{} starting", env!("CARGO_PKG_VERSION"));
     info!("reading named.conf from {}", cli.conf.display());
 
-    let named_conf = hornet_bind9::parse_named_conf_file(&cli.conf)
+    let named_conf = named_conf::parse_named_conf_file(&cli.conf)
         .with_context(|| format!("failed to parse {}", cli.conf.display()))?;
 
-    let mapper = Mapper::new(mapper::MapperConfig {
+    let manifests = Mapper::new(MapperConfig {
         conf_path: cli.conf.clone(),
-        zone_dir: cli.zone_dir,
-        namespace: cli.namespace,
-        cluster_ref: cli.cluster_ref,
-        zone_filter: cli.zone_filter,
+        zone_dir: cli.zone_dir.clone(),
+        namespace: cli.namespace.clone(),
+        cluster_ref: cli.cluster_ref.clone(),
+        zone_filter: cli.zone_filter.clone(),
         skip_records: cli.skip_records,
-        record_types: parse_record_types(cli.record_types.as_deref()),
-    });
-
-    let manifests = mapper.map(&named_conf)?;
-
-    for manifest in &manifests {
-        match cli.output.as_str() {
-            "json" => println!("{}", serde_json::to_string_pretty(manifest)?),
-            _ => {
-                print!("---\n{}", serde_yaml::to_string(manifest)?);
-            }
-        }
-    }
+        record_types: cli.record_types.clone(),
+    })
+    .map(&named_conf);
 
     info!("emitted {} manifest(s)", manifests.len());
-    Ok(())
+    Ok(render(&manifests, cli.output))
 }
 
-fn parse_record_types(input: Option<&str>) -> Option<Vec<String>> {
-    input.map(|s| s.split(',').map(|t| t.trim().to_uppercase()).collect())
+/// Renders manifests as a YAML stream (`---` before each document) or as
+/// concatenated pretty JSON objects, one per line group.
+fn render(manifests: &[Value], format: OutputFormat) -> String {
+    manifests
+        .iter()
+        .map(|m| match format {
+            OutputFormat::Json => format!("{}\n", m.to_json_pretty()),
+            OutputFormat::Yaml => format!("---\n{}", yaml::to_yaml(m)),
+        })
+        .collect()
 }
 
-fn init_tracing(debug: bool) {
-    let filter = if debug {
-        tracing_subscriber::EnvFilter::new("debug")
-    } else {
-        tracing_subscriber::EnvFilter::try_from_default_env()
-            .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("warn"))
-    };
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .with_writer(std::io::stderr)
-        .init();
-}
+#[cfg(test)]
+#[path = "main_tests.rs"]
+mod main_tests;

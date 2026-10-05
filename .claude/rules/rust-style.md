@@ -1,11 +1,19 @@
+<!--
+  Copyright (c) 2025 Erick Bourgeois, firestoned
+  SPDX-License-Identifier: Apache-2.0
+-->
+
 # Rust Style Guide
 
 ## Core Principles
 
-- Use `thiserror` for error types, not string errors
-- Prefer `anyhow::Result` in binaries, typed errors in libraries
-- Use `tracing` for logging, not `println!` or `log`
-- Async functions should use `tokio`
+- **No third-party crates** without an ADR: own anything that is 500 lines
+  or less (`rules/dependencies.md`, ADR-0006)
+- Errors: `crate::error::{Error, Result, Context}`; add context with
+  `.with_context(|| ...)` at every I/O and parse boundary
+- Logging: the crate's `warn!` / `info!` / `debug!` macros (`src/log.rs`),
+  never `println!` or `eprintln!` for diagnostics; stdout is reserved for
+  manifests
 - All k8s API calls must have timeout and retry logic
 - **No magic numbers**: Any numeric literal other than `0` or `1` MUST be declared as a named constant
 - **Use early returns/guard clauses**: Minimize nesting by handling edge cases early and returning
@@ -76,11 +84,11 @@ The "early return" or "guard clause" coding style emphasizes minimizing nested i
    ```rust
    // ✅ GOOD - Early error returns with ?
    pub async fn add_dnszone(client: Client, dnszone: DNSZone) -> Result<()> {
-       let namespace = dnszone.namespace().ok_or_else(|| anyhow!("No namespace"))?;
+       let namespace = dnszone.namespace().ok_or_else(|| Error::new("No namespace"))?;
        let instances = find_instances(&client, &namespace).await?;
 
        if instances.is_empty() {
-           return Err(anyhow!("No instances found"));
+           return Err(Error::new("No instances found"));
        }
 
        for instance in instances {

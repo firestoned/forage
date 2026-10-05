@@ -1,22 +1,21 @@
 // Copyright (c) 2025 Erick Bourgeois, firestoned
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
-//! Maps hornet AST types to bindy CRD manifests.
+//! Maps the parsed named.conf and zone files to bindy CRD manifests.
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
-use hornet_bind9::ast::named_conf::{NamedConf, Statement, ZoneStmt, ZoneType};
-use hornet_bind9::ast::zone_file::{Entry, RData, ResourceRecord};
-use serde_json::Value;
-use tracing::{debug, warn};
+use crate::json::Value;
+use crate::named_conf::{NamedConf, Statement, ZoneStmt};
+use crate::zone_file::{parse_zone_file_from_path, Entry, Name, RData, ResourceRecord, ZoneFile};
 
 use crate::crd::{
-    AaaaRecord, AaaaRecordSpec, ARecord, ARecordSpec, CaaRecord, CaaRecordSpec, CnameRecord,
+    ARecord, ARecordSpec, AaaaRecord, AaaaRecordSpec, CaaRecord, CaaRecordSpec, CnameRecord,
     CnameRecordSpec, DnsZone, DnsZoneSpec, LabelSelector, MxRecord, MxRecordSpec, NameServer,
-    ObjectMeta, RecordSource, SoaRecord, SrvRecord, SrvRecordSpec, TxtRecord, TxtRecordSpec,
-    API_VERSION, LABEL_MANAGED_BY, LABEL_SOURCE, LABEL_ZONE, MANAGED_BY_VALUE, SOURCE_VALUE,
+    ObjectMeta, RecordSource, SoaRecord, SrvRecord, SrvRecordSpec, ToJson, TxtRecord,
+    TxtRecordSpec, API_VERSION, LABEL_MANAGED_BY, LABEL_SOURCE, LABEL_ZONE, MANAGED_BY_VALUE,
+    SOURCE_VALUE,
 };
 
 // ── Configuration ─────────────────────────────────────────────────────────────
@@ -55,7 +54,7 @@ impl Mapper {
     /// Map a [`NamedConf`] AST to a list of JSON values representing Kubernetes manifests.
     ///
     /// The returned values are ordered: all `DNSZone` resources first, then record CRs.
-    pub fn map(&self, conf: &NamedConf) -> Result<Vec<Value>> {
+    pub fn map(&self, conf: &NamedConf) -> Vec<Value> {
         // Determine base directory for zone-file path resolution.
         let base_dir = self.resolve_base_dir(conf);
         debug!("zone file base directory: {}", base_dir.display());
@@ -73,18 +72,13 @@ impl Mapper {
                 continue;
             }
 
-            if is_non_local_zone(zone) {
+            if let Some(zone_type) = non_local_zone_type(zone) {
                 warn!(
-                    "zone '{}' is type {} — no local zone file; emitting DNSZone shell only",
-                    zone.name,
-                    zone.options
-                        .zone_type
-                        .as_ref()
-                        .map(|t| format!("{t}"))
-                        .unwrap_or_else(|| "unknown".into())
+                    "zone '{}' is type {zone_type}: no local zone file; emitting DNSZone shell only",
+                    zone.name
                 );
                 let dns_zone = self.build_dns_zone_shell(zone);
-                zone_manifests.push(serde_json::to_value(dns_zone)?);
+                zone_manifests.push(dns_zone.to_json());
                 continue;
             }
 
@@ -97,13 +91,13 @@ impl Mapper {
                         zone.name
                     );
                     let dns_zone = self.build_dns_zone_shell(zone);
-                    zone_manifests.push(serde_json::to_value(dns_zone)?);
+                    zone_manifests.push(dns_zone.to_json());
                     continue;
                 }
             };
 
             // Parse the zone file.
-            let zone_file = match hornet_bind9::parse_zone_file_from_path(&zone_file_path) {
+            let zone_file = match parse_zone_file_from_path(&zone_file_path) {
                 Ok(zf) => zf,
                 Err(e) => {
                     warn!(
@@ -112,10 +106,20 @@ impl Mapper {
                         zone.name
                     );
                     let dns_zone = self.build_dns_zone_shell(zone);
-                    zone_manifests.push(serde_json::to_value(dns_zone)?);
+                    zone_manifests.push(dns_zone.to_json());
                     continue;
                 }
             };
+
+            // A line that did not parse is a record that will not be imported.
+            for skipped in &zone_file.skipped {
+                warn!(
+                    "{}:{}: not imported, could not parse: {}",
+                    zone_file_path.display(),
+                    skipped.line,
+                    skipped.text
+                );
+            }
 
             // Extract the SOA record (required for DNSZone).
             let soa = extract_soa(&zone_file);
@@ -125,20 +129,20 @@ impl Mapper {
 
             // Build the DNSZone manifest.
             let dns_zone = self.build_dns_zone(zone, soa, name_servers, extract_ttl(&zone_file));
-            zone_manifests.push(serde_json::to_value(dns_zone)?);
+            zone_manifests.push(dns_zone.to_json());
 
             if self.config.skip_records {
                 continue;
             }
 
             // Build record CRs from the zone file.
-            let records = self.build_record_manifests(&zone.name, &zone_file)?;
+            let records = self.build_record_manifests(&zone.name, &zone_file);
             record_manifests.extend(records);
         }
 
         let mut all = zone_manifests;
         all.extend(record_manifests);
-        Ok(all)
+        all
     }
 
     // ── Zone file path resolution ─────────────────────────────────────────────
@@ -227,10 +231,7 @@ impl Mapper {
                 name_servers,
                 records_from: vec![RecordSource {
                     selector: LabelSelector {
-                        match_labels: BTreeMap::from([(
-                            LABEL_ZONE.to_string(),
-                            zone.name.clone(),
-                        )]),
+                        match_labels: BTreeMap::from([(LABEL_ZONE.to_string(), zone.name.clone())]),
                     },
                 }],
             },
@@ -268,11 +269,7 @@ impl Mapper {
 
     // ── Record CR builders ────────────────────────────────────────────────────
 
-    fn build_record_manifests(
-        &self,
-        zone_name: &str,
-        zone_file: &hornet_bind9::ast::zone_file::ZoneFile,
-    ) -> Result<Vec<Value>> {
+    fn build_record_manifests(&self, zone_name: &str, zone_file: &ZoneFile) -> Vec<Value> {
         // Group A and AAAA records by name to collapse multi-address records.
         let mut a_records: BTreeMap<(String, Option<i32>), Vec<String>> = BTreeMap::new();
         let mut aaaa_records: BTreeMap<(String, Option<i32>), Vec<String>> = BTreeMap::new();
@@ -298,19 +295,18 @@ impl Mapper {
                 }
                 RData::Cname(target) if self.record_type_allowed("CNAME") => {
                     let idx = next_index(&mut index_counters, "cname");
-                    let cr_name =
-                        cr_name("forage", zone_name, &record_name, "cname", idx);
+                    let cr_name = cr_name("forage", zone_name, &record_name, "cname", idx);
                     let cr = CnameRecord {
                         api_version: API_VERSION.to_string(),
                         kind: "CNAMERecord".to_string(),
                         metadata: self.record_meta(&cr_name, zone_name),
                         spec: CnameRecordSpec {
                             name: record_name,
-                            alias: ensure_trailing_dot(target.as_str()),
+                            target: ensure_trailing_dot(target.as_str()),
                             ttl,
                         },
                     };
-                    other_records.push(serde_json::to_value(cr)?);
+                    other_records.push(cr.to_json());
                 }
                 RData::Mx(mx) if self.record_type_allowed("MX") => {
                     let idx = next_index(&mut index_counters, "mx");
@@ -321,12 +317,12 @@ impl Mapper {
                         metadata: self.record_meta(&cr_name, zone_name),
                         spec: MxRecordSpec {
                             name: record_name,
-                            preference: mx.preference,
-                            exchange: ensure_trailing_dot(mx.exchange.as_str()),
+                            priority: mx.preference,
+                            mail_server: ensure_trailing_dot(mx.exchange.as_str()),
                             ttl,
                         },
                     };
-                    other_records.push(serde_json::to_value(cr)?);
+                    other_records.push(cr.to_json());
                 }
                 RData::Txt(parts) if self.record_type_allowed("TXT") => {
                     let idx = next_index(&mut index_counters, "txt");
@@ -337,11 +333,11 @@ impl Mapper {
                         metadata: self.record_meta(&cr_name, zone_name),
                         spec: TxtRecordSpec {
                             name: record_name,
-                            value: parts.join(""),
+                            text: parts.clone(),
                             ttl,
                         },
                     };
-                    other_records.push(serde_json::to_value(cr)?);
+                    other_records.push(cr.to_json());
                 }
                 RData::Srv(srv) if self.record_type_allowed("SRV") => {
                     let idx = next_index(&mut index_counters, "srv");
@@ -359,7 +355,7 @@ impl Mapper {
                             ttl,
                         },
                     };
-                    other_records.push(serde_json::to_value(cr)?);
+                    other_records.push(cr.to_json());
                 }
                 RData::Caa(caa) if self.record_type_allowed("CAA") => {
                     let idx = next_index(&mut index_counters, "caa");
@@ -376,7 +372,7 @@ impl Mapper {
                             ttl,
                         },
                     };
-                    other_records.push(serde_json::to_value(cr)?);
+                    other_records.push(cr.to_json());
                 }
                 RData::Ns(_) | RData::Soa(_) => {
                     // Folded into DNSZone — not standalone record CRs.
@@ -406,7 +402,7 @@ impl Mapper {
                     ttl,
                 },
             };
-            result.push(serde_json::to_value(cr)?);
+            result.push(cr.to_json());
         }
 
         // Emit collapsed AAAA records.
@@ -423,31 +419,27 @@ impl Mapper {
                     ttl,
                 },
             };
-            result.push(serde_json::to_value(cr)?);
+            result.push(cr.to_json());
         }
 
         result.extend(other_records);
-        Ok(result)
+        result
     }
 }
 
 // ── Zone file helpers ─────────────────────────────────────────────────────────
 
-/// Returns true for zone types that have no local zone file.
-fn is_non_local_zone(zone: &ZoneStmt) -> bool {
-    matches!(
-        zone.options.zone_type,
-        Some(ZoneType::Secondary)
-            | Some(ZoneType::Stub)
-            | Some(ZoneType::Forward)
-            | Some(ZoneType::Hint)
-    )
+/// Returns the zone's type when it is one that has no local zone file
+/// (secondary, stub, forward, hint), or `None` for zones forage reads.
+fn non_local_zone_type(zone: &ZoneStmt) -> Option<&str> {
+    zone.options
+        .zone_type
+        .as_deref()
+        .filter(|t| matches!(*t, "secondary" | "stub" | "forward" | "hint"))
 }
 
 /// Extract the SOA record from a zone file, if present.
-fn extract_soa(
-    zone_file: &hornet_bind9::ast::zone_file::ZoneFile,
-) -> Option<SoaRecord> {
+fn extract_soa(zone_file: &ZoneFile) -> Option<SoaRecord> {
     zone_file.records().find_map(|rr| {
         if let RData::Soa(soa) = &rr.rdata {
             Some(SoaRecord {
@@ -466,7 +458,7 @@ fn extract_soa(
 }
 
 /// Extract the $TTL value from zone file directives.
-fn extract_ttl(zone_file: &hornet_bind9::ast::zone_file::ZoneFile) -> Option<i32> {
+fn extract_ttl(zone_file: &ZoneFile) -> Option<i32> {
     zone_file.entries.iter().find_map(|e| {
         if let Entry::Ttl(ttl) = e {
             Some(*ttl as i32)
@@ -477,10 +469,7 @@ fn extract_ttl(zone_file: &hornet_bind9::ast::zone_file::ZoneFile) -> Option<i32
 }
 
 /// Extract NS records and pair them with A glue records to build [`NameServer`] entries.
-fn extract_name_servers(
-    zone_file: &hornet_bind9::ast::zone_file::ZoneFile,
-    zone_name: &str,
-) -> Vec<NameServer> {
+fn extract_name_servers(zone_file: &ZoneFile, zone_name: &str) -> Vec<NameServer> {
     // Collect NS hostnames.
     let ns_names: Vec<String> = zone_file
         .records()
@@ -524,7 +513,6 @@ fn extract_name_servers(
 /// Resolve a resource record's name relative to the zone name.
 /// `@` and absent names → `@` (apex). Absolute names have the zone suffix stripped.
 fn resolve_record_name(rr: &ResourceRecord, zone_name: &str) -> String {
-    use hornet_bind9::ast::zone_file::Name;
     match &rr.name {
         None => "@".to_string(),
         Some(name) if Name::is_at(name) => "@".to_string(),
@@ -595,5 +583,5 @@ fn next_index(counters: &mut BTreeMap<String, usize>, key: &str) -> usize {
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[path = "mapper_test.rs"]
-mod mapper_test;
+#[path = "mapper_tests.rs"]
+mod mapper_tests;

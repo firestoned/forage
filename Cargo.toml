@@ -1,9 +1,12 @@
+# Copyright (c) 2025 Erick Bourgeois, firestoned
+# SPDX-License-Identifier: Apache-2.0
+
 [package]
 name        = "forage"
 version     = "0.1.0"
 edition     = "2021"
 rust-version = "1.74"
-license     = "MIT"
+license     = "Apache-2.0"
 repository  = "https://github.com/firestoned/forage"
 homepage    = "https://github.com/firestoned/forage"
 description = "Import an existing BIND9 named.conf into a bindy-managed Kubernetes cluster as native CRD resources"
@@ -16,24 +19,5 @@ name = "forage"
 path = "src/main.rs"
 
 [dependencies]
-# BIND9 named.conf + zone file parser
-hornet-bind9 = { version = "0.1", features = ["serde"] }
-
-# CLI argument parsing
-clap = { version = "4", features = ["derive", "color"] }
-
-# YAML / JSON serialization for Kubernetes manifests
-serde       = { version = "1", features = ["derive"] }
-serde_yaml  = "0.9"
-serde_json  = "1"
-
-# Error handling
-anyhow    = "1"
-thiserror = "1"
-
-# Logging
-tracing            = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
-
-[dev-dependencies]
-tempfile = "3"
+# None, by policy (ADR-0006, .claude/rules/dependencies.md): when what forage
+# uses from a crate is 500 lines or less, forage owns that code instead.

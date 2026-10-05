@@ -1,9 +1,15 @@
 # Copyright (c) 2025 Erick Bourgeois, firestoned
-# SPDX-License-Identifier: MIT
+# SPDX-License-Identifier: Apache-2.0
 
-.PHONY: help install build run test test-lib test-cov test-cov-view test-cov-ci \
-        lint format docs docs-serve docs-clean \
-        cargo-deny gitleaks gitleaks-install \
+.PHONY: help install build build-release run run-debug test test-lib test-ci \
+        coverage coverage-install test-cov test-cov-view e2e-coverage \
+        lint format format-check clippy clippy-pedantic set-version \
+        docs docs-serve docs-clean \
+        calm-validate calm-docs calm-docs-check \
+        e2e-schema e2e-apply e2e-update e2e-all e2e-clean e2e-diagnostics \
+        sbom-generate sbom-stage sbom-annotate sbom-check \
+        release-tarball provenance-subjects release-assets \
+        cargo-deny cargo-machete gitleaks gitleaks-install \
         semgrep semgrep-install semgrep-sarif \
         license-check license-report \
         security-scan-local security-scan-quick \
@@ -12,6 +18,11 @@
 BINARY_NAME     := forage
 CONF_PATH       ?= /etc/bind/named.conf
 DOCS_PORT       ?= 8000
+TARGET          ?= x86_64-unknown-linux-gnu
+
+# bindy release whose CRDs forage's output is verified against (ADR-0002,
+# ADR-0003). Bump deliberately, with src/crd.rs and src/crd_tests.rs.
+BINDY_VERSION   ?= v0.7.1
 
 # Security tool versions
 GITLEAKS_VERSION ?= 8.21.2
@@ -44,27 +55,74 @@ run-debug: ## Run forage with debug logging
 test: ## Run all tests
 	cargo test --all
 
-test-lib: ## Run library (unit) tests only
-	cargo test --lib
+test-lib: ## Run unit tests only (forage is a binary crate: no lib target)
+	cargo test --bins
 
-test-cov: ## Run tests with coverage (HTML report)
-	@command -v cargo-tarpaulin >/dev/null 2>&1 || { echo "Installing cargo-tarpaulin..."; cargo install cargo-tarpaulin; }
-	cargo tarpaulin --out Html --output-dir coverage --exclude-files '*_tests.rs' --timeout 300
-	@echo "✓ Coverage report: coverage/tarpaulin-report.html"
+test-ci: ## Run tests in the release profile for TARGET, reusing the release build (CI)
+	cargo test --locked --release --target $(TARGET)
 
-test-cov-view: test-cov ## Run coverage and open the HTML report
-	open coverage/tarpaulin-report.html 2>/dev/null || echo "Open coverage/tarpaulin-report.html manually"
+# ── Coverage (ADR-0005) ──────────────────────────────────────────────────────
+# cargo-llvm-cov follows the forage binary into the subprocesses the CLI
+# tests and e2e suites spawn. Reports land in target/coverage/<tier>/:
+# html/, lcov.info, summary.json, uncovered.txt.
+COVERAGE_DIR      ?= target/coverage
+COVERAGE_GATE     := --fail-uncovered-lines 0 --fail-under-functions 100
 
-test-cov-ci: ## Run coverage for CI (text output, no browser)
-	@command -v cargo-tarpaulin >/dev/null 2>&1 || { echo "Installing cargo-tarpaulin..."; cargo install cargo-tarpaulin; }
-	cargo tarpaulin --out Stdout --exclude-files '*_tests.rs' --timeout 300
+coverage-install: ## Install cargo-llvm-cov and llvm-tools if missing
+	@command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked
+	@rustup component add llvm-tools-preview >/dev/null 2>&1 || true
 
-lint: ## Run clippy and fmt check
-	cargo fmt -- --check
-	cargo clippy -- -D warnings
+coverage-reports: ## Write html, lcov, summary.json, uncovered.txt for TIER from the current profile data, and publish the summary (usage: make coverage-reports TIER=e2e TITLE="...")
+	@if [ -z "$(TIER)" ]; then echo "Error: TIER required"; exit 1; fi
+	@mkdir -p $(COVERAGE_DIR)/$(TIER)
+	cargo llvm-cov report --html --output-dir $(COVERAGE_DIR)/$(TIER)
+	cargo llvm-cov report --lcov --output-path $(COVERAGE_DIR)/$(TIER)/lcov.info
+	cargo llvm-cov report --json --summary-only --output-path $(COVERAGE_DIR)/$(TIER)/summary.json
+	cargo llvm-cov report --summary-only --show-missing-lines > $(COVERAGE_DIR)/$(TIER)/uncovered.txt
+	@./scripts/coverage-summary.sh $(COVERAGE_DIR)/$(TIER)/summary.json \
+		"$(or $(TITLE),Coverage: $(TIER))" $(COVERAGE_DIR)/$(TIER)/uncovered.txt
+
+coverage: coverage-install ## Unit + integration coverage, reports, and the 100% gate (CI)
+	cargo llvm-cov clean --workspace
+	cargo llvm-cov --locked --no-report
+	@$(MAKE) --no-print-directory coverage-reports TIER=unit-integration TITLE="Coverage: unit + integration"
+	cargo llvm-cov report --summary-only $(COVERAGE_GATE)
+
+test-cov: coverage ## Alias for coverage
+
+test-cov-view: coverage ## Run coverage and open the HTML report
+	open $(COVERAGE_DIR)/unit-integration/html/index.html 2>/dev/null \
+		|| echo "Open $(COVERAGE_DIR)/unit-integration/html/index.html manually"
+
+# One shell: the instrumentation env from show-env must cover the build, the
+# suites AND the reports, or `report` reads cargo test's profiles instead.
+e2e-coverage: coverage-install ## e2e suites against an instrumented binary; reports only, no gate (CI)
+	@set -e; eval "$$(cargo llvm-cov show-env --sh 2>/dev/null)"; \
+	cargo llvm-cov clean --workspace; \
+	cargo build --locked; \
+	FORAGE_BIN=$(abspath target/debug/forage) BINDY_VERSION=$(BINDY_VERSION) \
+		KIND_CLUSTER=forage-e2e-coverage ./tests/e2e/forage-e2e.sh all; \
+	$(MAKE) --no-print-directory coverage-reports TIER=e2e \
+		TITLE="Coverage: e2e (bindy $(BINDY_VERSION) CRDs on kind)"
+
+lint: format-check clippy ## Run fmt check and clippy
 
 format: ## Format source code with rustfmt
 	cargo fmt
+
+format-check: ## Fail if any file is not rustfmt-formatted (CI)
+	cargo fmt -- --check
+
+clippy: ## Run clippy on all targets, warnings are errors (CI)
+	cargo clippy --all-targets --all-features -- -D warnings
+
+clippy-pedantic: ## Run the cargo-quality skill's pedantic clippy (roadmap 02 tracks the backlog)
+	cargo clippy --all-targets --all-features -- -D warnings -W clippy::pedantic -A clippy::module_name_repetitions
+
+set-version: ## Set the package version in Cargo.toml (usage: make set-version VERSION=1.2.3)
+	@if [ -z "$(VERSION)" ]; then echo "Error: VERSION required"; exit 1; fi
+	@perl -i -pe 's/^version\s*=\s*".*"/version     = "$(VERSION)"/' Cargo.toml
+	@grep '^version' Cargo.toml
 
 docs: ## Build rustdoc documentation
 	cargo doc --no-deps
@@ -83,8 +141,16 @@ docs-clean: ## Remove generated documentation
 cargo-deny: ## Check dependencies for security, licenses, and supply chain issues
 	@command -v cargo-deny >/dev/null 2>&1 || { echo "Installing cargo-deny..."; cargo install cargo-deny; }
 	@echo "Running cargo-deny checks..."
-	@cargo deny check
+	@version=$$(cargo deny --version); \
+	case "$$version" in \
+		*" 0.19."*) cargo deny check --config .cargo/deny.toml ;; \
+		*) cargo deny --config .cargo/deny.toml check ;; \
+	esac
 	@echo "✓ cargo-deny passed"
+
+cargo-machete: ## Check for unused dependencies
+	@command -v cargo-machete >/dev/null 2>&1 || { echo "Installing cargo-machete..."; cargo install cargo-machete; }
+	@cargo machete
 
 gitleaks-install: ## Install gitleaks from GitHub with checksum verification
 	@if ! command -v gitleaks >/dev/null 2>&1; then \
@@ -206,9 +272,106 @@ security-scan-local: cargo-deny gitleaks ## Run local security scans (pre-commit
 security-scan-quick: cargo-deny gitleaks license-check ## Run quick security scans (for CI)
 	@echo "✓ Quick security scans completed"
 
+# ── CALM (Architecture as Code) ───────────────────────────────────────────────
+# FINOS CALM models live in ./calm; docs/src/architecture/calm-*.md is
+# GENERATED from them. Node.js (>=20) is required; the CLI is fetched on demand
+# via npx, pinned for reproducibility.
+CALM_CLI_VERSION ?= 1.47.1
+CALM ?= npx --yes @finos/calm-cli@$(CALM_CLI_VERSION)
+
+calm-validate: ## Schema-validate every calm/*.architecture.json against CALM 1.2
+	@command -v npx >/dev/null 2>&1 || { echo "Error: npx (Node.js >=20) not found."; exit 1; }
+	@for f in calm/*.architecture.json; do \
+		echo "==> validating $$f"; \
+		$(CALM) validate -a "$$f" -f pretty || exit 1; \
+	done
+	@echo "✓ All CALM models valid."
+
+calm-docs: ## Regenerate the Mermaid architecture pages from the CALM models
+	@command -v npx >/dev/null 2>&1 || { echo "Error: npx (Node.js >=20) not found."; exit 1; }
+	@CALM_CLI_VERSION=$(CALM_CLI_VERSION) ./scripts/calm-docs.sh
+
+calm-docs-check: ## Verify the committed CALM Mermaid pages match the models (CI drift gate)
+	@$(MAKE) --no-print-directory calm-docs
+	@git diff --exit-code -- docs/src/architecture/calm-*.md \
+		|| { echo "ERROR: CALM docs are stale. Run 'make calm-docs' and commit the result."; exit 1; }
+	@echo "✓ CALM docs are up to date."
+
+# ── e2e against bindy's CRDs (ADR-0003) ──────────────────────────────────────
+# Needs kind, kubectl, curl and a container runtime. FORAGE_BIN defaults to
+# target/release/forage (built here if missing). Each suite owns its cluster.
+FORAGE_BIN ?= target/release/forage
+E2E_ENV    := FORAGE_BIN=$(abspath $(FORAGE_BIN)) BINDY_VERSION=$(BINDY_VERSION)
+
+$(FORAGE_BIN):
+	cargo build --release --locked
+
+e2e-schema: $(FORAGE_BIN) ## e2e: server-side dry run of forage output against bindy CRDs (strict)
+	$(E2E_ENV) ./tests/e2e/forage-e2e.sh schema
+
+e2e-apply: $(FORAGE_BIN) ## e2e: apply, spec round-trip, zone selectors, idempotency, determinism
+	$(E2E_ENV) ./tests/e2e/forage-e2e.sh apply
+
+e2e-update: $(FORAGE_BIN) ## e2e: re-import after a zone change touches only what changed
+	$(E2E_ENV) ./tests/e2e/forage-e2e.sh update
+
+e2e-all: $(FORAGE_BIN) ## Run every e2e suite on one cluster (CI runs them in parallel)
+	$(E2E_ENV) ./tests/e2e/forage-e2e.sh all
+
+e2e-clean: ## Delete e2e kind clusters and the e2e work dir
+	./tests/e2e/forage-e2e.sh clean
+
+e2e-diagnostics: ## Dump cluster state for a failed suite (usage: make e2e-diagnostics CONTEXT=kind-forage-e2e-schema)
+	@if [ -z "$(CONTEXT)" ]; then echo "Error: CONTEXT required"; exit 1; fi
+	-kubectl --context "$(CONTEXT)" get nodes -o wide
+	-kubectl --context "$(CONTEXT)" get crd
+	-kubectl --context "$(CONTEXT)" get dnszones,arecords,aaaarecords,cnamerecords,mxrecords,txtrecords,srvrecords,caarecords -A
+	-kubectl --context "$(CONTEXT)" get events -A --sort-by=.lastTimestamp
+
+# ── SBOMs, signing inputs and SLSA provenance (ADR-0004) ──────────────────────
+# CI generates binary SBOMs with firestoned/github-actions/rust/generate-sbom;
+# these targets post-process, gate and package them the same way locally.
+SBOM_DIR          ?= sbom
+SBOM_SPEC_VERSION ?= 1.5
+
+sbom-generate: ## Generate the forage SBOM locally (usage: make sbom-generate TARGET=x86_64-unknown-linux-gnu)
+	@command -v cargo-cyclonedx >/dev/null 2>&1 || { echo "Error: cargo-cyclonedx not found. Run 'cargo install cargo-cyclonedx --locked --version 0.5.9'."; exit 1; }
+	@cargo cyclonedx --all --describe crate --target $(TARGET) --spec-version $(SBOM_SPEC_VERSION) --format json
+	@echo "✓ SBOM generated: $(BINARY_NAME).cdx.json"
+
+sbom-stage: ## Stage, annotate and gate the binary SBOM (usage: make sbom-stage SBOM_NAME=forage-linux-amd64)
+	@if [ -z "$(SBOM_NAME)" ]; then echo "Error: SBOM_NAME required, e.g. SBOM_NAME=forage-linux-amd64"; exit 1; fi
+	@test -f $(BINARY_NAME).cdx.json || { echo "Error: $(BINARY_NAME).cdx.json not found; generate it first"; exit 1; }
+	@mkdir -p $(SBOM_DIR)
+	@cp $(BINARY_NAME).cdx.json $(SBOM_DIR)/$(SBOM_NAME).cdx.json
+	@$(MAKE) --no-print-directory sbom-annotate SBOM=$(SBOM_DIR)/$(SBOM_NAME).cdx.json
+	@$(MAKE) --no-print-directory sbom-check SBOM=$(SBOM_DIR)/$(SBOM_NAME).cdx.json
+
+sbom-annotate: ## Add producer metadata (supplier, author) to an SBOM if absent (usage: make sbom-annotate SBOM=file.cdx.json)
+	@if [ -z "$(SBOM)" ]; then echo "Error: SBOM required"; exit 1; fi
+	@./scripts/sbom.sh annotate "$(SBOM)"
+
+sbom-check: ## Fail unless an SBOM meets the NTIA minimum elements (usage: make sbom-check SBOM=file.cdx.json)
+	@if [ -z "$(SBOM)" ]; then echo "Error: SBOM required"; exit 1; fi
+	@./scripts/sbom.sh check "$(SBOM)"
+
+release-tarball: ## Package one binary as NAME.tar.gz in DIR (usage: make release-tarball DIR=artifacts/x BINARY=forage NAME=forage-linux-amd64)
+	@./scripts/release.sh tarball "$(DIR)" "$(BINARY)" "$(NAME)"
+
+provenance-subjects: ## Write base64 SLSA subjects for every file in DIR (signature bundles excluded) to OUT (usage: make provenance-subjects DIR=subjects OUT=subjects.b64)
+	@if [ -z "$(DIR)" ] || [ -z "$(OUT)" ]; then echo "Error: DIR and OUT required"; exit 1; fi
+	@cd "$(DIR)" && find . -maxdepth 1 -type f ! -name '.*' ! -name '*.bundle' -print0 | sort -z \
+		| xargs -0 sha256sum | sed 's| \./| |' > "$(CURDIR)/subjects.sha256"
+	@cat "$(CURDIR)/subjects.sha256"
+	@base64 -w0 < "$(CURDIR)/subjects.sha256" > "$(OUT)"
+	@echo "✓ $$(wc -l < "$(CURDIR)/subjects.sha256" | tr -d ' ') provenance subjects written to $(OUT)"
+
+release-assets: ## Sort downloaded release artifacts in DIR into release/ sboms/ signatures/ provenance/ + checksums (usage: make release-assets DIR=artifacts)
+	@./scripts/release.sh assets "$(DIR)"
+
 # ── Housekeeping ──────────────────────────────────────────────────────────────
 
 clean: ## Remove build artifacts
 	cargo clean
-	rm -rf target/ coverage/ licenses.json semgrep-results.sarif
+	rm -rf target/ sbom/ licenses.json semgrep-results.sarif subjects.sha256 $(BINARY_NAME).cdx.json
 	@echo "✓ Clean complete"

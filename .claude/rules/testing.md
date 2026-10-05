@@ -1,3 +1,8 @@
+<!--
+  Copyright (c) 2025 Erick Bourgeois, firestoned
+  SPDX-License-Identifier: Apache-2.0
+-->
+
 # Testing Standards
 
 ## CRITICAL: Test-Driven Development (TDD) Workflow

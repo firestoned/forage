@@ -1,7 +1,26 @@
-# BYOB9 — Bring Your Own BIND9
+<!--
+  Copyright (c) 2025 Erick Bourgeois, firestoned
+  SPDX-License-Identifier: Apache-2.0
+-->
+
+# 00: Bring Your Own BIND9 (BYOB9)
 
 > Onboard an existing BIND9 instance into a bindy-managed Kubernetes cluster
 > by importing its `named.conf` (and zone files) as native bindy CRD resources.
+
+## Status (audited against the tree 2026-10-05)
+
+- **Phase 1 (one-time import): done**, shipped as `forage` in its own
+  repository ([ADR-0001](../../docs/adr/0001-stateless-stdout-cli.md)). The
+  binary name `byob9` below is the working title; `forage` was chosen.
+- Follow-up fidelity gaps found while auditing (SRV dropped after TXT,
+  relative `directory`, `view` zones, `--dry-run`) are tracked in
+  [roadmap 01](01-import-fidelity.md), not here.
+- **Phase 2 (live sync): not started.** It reverses ADR-0001 (forage would
+  need a Kubernetes client and credentials), so it starts with a new ADR.
+
+This document is kept as the original design record; the milestone tables
+below carry the current state.
 
 ---
 
@@ -264,16 +283,16 @@ as needed.
 
 ### Phase 1 Milestones
 
-| # | Task | Notes |
-|---|------|-------|
-| 1 | Create new crate `forage` (binary) in workspace or standalone | Depends on hornet + kube serialization libs |
-| 2 | Implement `named.conf` → `Vec<DNSZone>` mapper | hornet `ZoneStmt` + zone-file SOA |
-| 3 | Implement zone-file record → record CR mapper | A, AAAA, CNAME, MX, TXT, SRV, CAA |
-| 4 | YAML serializer for bindy CRD types (serde + k8s_openapi) | No live kube client needed |
-| 5 | CLI: clap with flags from Inputs table above | |
-| 6 | Unit tests: one zone file per record type | Use `hornet` to parse test fixtures |
-| 7 | Integration test: parse real-world `named.conf` sample | Use `examples/external-bind9/` configs |
-| 8 | Add `forage` to bindcar CI (`make forage-build`) | |
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 1 | Create new crate `forage` (binary) in workspace or standalone | ✅ | Standalone repository (ADR-0001) |
+| 2 | Implement `named.conf` → `Vec<DNSZone>` mapper | ✅ | `src/mapper.rs` |
+| 3 | Implement zone-file record → record CR mapper | ✅ | A, AAAA, CNAME, MX, TXT, SRV, CAA. CNAME/MX/TXT field names were wrong against bindy until 2026-10-05 (ADR-0002) |
+| 4 | YAML serializer for bindy CRD types | ✅ | Hand-written structs (ADR-0002) rendered by forage's own JSON/YAML writers, no serde (ADR-0006) |
+| 5 | CLI with flags from Inputs table above | 🔶 | Own argument parser, no clap (ADR-0006). All flags except `--dry-run` → roadmap 01 |
+| 6 | Unit tests: one zone file per record type | ✅ | `tests/fixtures/basic` covers every type in one zone; `tests/cli_tests.rs`, `src/crd_tests.rs` |
+| 7 | Integration test against a real API server | ✅ | Superseded the "real-world sample" idea: e2e against pinned bindy CRDs (ADR-0003) |
+| 8 | Add `forage` to bindcar CI (`make forage-build`) | 📄 | Superseded: forage has its own Build workflow (ADR-0004) |
 
 ### Phase 2 Milestones (future)
 
@@ -290,13 +309,13 @@ as needed.
 
 ## Open Questions
 
-1. **Where does `forage` live?**
+1. **Where does `forage` live?** *Resolved: standalone repository (ADR-0001).*
    - Option A: New binary in the `bindcar` workspace (`src/bin/forage.rs` or sub-crate)
    - Option B: New standalone repository `forage` (keeps it independent)
    - Option C: New binary in the `bindy` repository (closer to the CRD types)
    - *Recommendation*: Standalone repo — it has its own dependencies (hornet) and release cycle, but links conceptually to both bindcar (out-of-cluster) and bindy (CRD target).
 
-2. **How to serialize bindy CRD types without importing the full `bindy` crate?**
+2. **How to serialize bindy CRD types without importing the full `bindy` crate?** *Resolved: option A, hand-written structs (ADR-0002), not C.*
    - Option A: Copy the relevant `Spec` structs + derive `Serialize` (duplicates types)
    - Option B: Depend on a `bindy-types` crate extracted from bindy (needs bindy refactor)
    - Option C: Build raw `serde_json::Value` / `serde_yaml::Value` and emit without strong types
@@ -316,7 +335,7 @@ as needed.
 
 | Project | Relationship |
 |---------|-------------|
-| `hornet` (`~/dev/hornet`) | Parser library — `forage` depends on it |
+| `hornet` (`~/dev/hornet`) | Parser library forage used until ADR-0006 replaced it with its own reader |
 | `bindy` (`~/dev/bindy`) | CRD target — `forage` emits resources for the bindy operator |
 | `bindcar drone` | Management plane — once onboarded, bindcar drone manages the same remote BIND9 |
 | `scout` (bindy) | Conceptual sibling — scout creates CRs from k8s workloads; forage creates CRs from BIND9 |
