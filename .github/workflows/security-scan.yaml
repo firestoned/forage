@@ -29,7 +29,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Run cargo-audit
-        uses: firestoned/github-actions/rust/security-scan@d0d51c638a90bffc2a1567fe7af112b37fe8854c # v1.3.7
+        uses: firestoned/github-actions/rust/security-scan@e034489c3a17ffaaaf7f8fb799156ce768d899d5 # v1.3.9
         with:
           cargo-audit-version: "0.22.0"
           upload-artifact-name: cargo-audit-report-scheduled-${{ github.run_number }}
