@@ -62,12 +62,12 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup Rust build environment
-        uses: firestoned/github-actions/rust/setup-rust-build@e034489c3a17ffaaaf7f8fb799156ce768d899d5 # v1.3.9
+        uses: firestoned/github-actions/rust/setup-rust-build@f52366c4f57f0110012035ac1bcd0bee4075b3e9 # v1.4.0
         with:
           target: x86_64-unknown-linux-gnu
 
       - name: Build binary
-        uses: firestoned/github-actions/rust/build-binary@e034489c3a17ffaaaf7f8fb799156ce768d899d5 # v1.3.9
+        uses: firestoned/github-actions/rust/build-binary@f52366c4f57f0110012035ac1bcd0bee4075b3e9 # v1.4.0
         with:
           binary-name: forage
           target: x86_64-unknown-linux-gnu
@@ -160,10 +160,10 @@ jobs:
           components: llvm-tools-preview
 
       - name: Cache cargo dependencies
-        uses: firestoned/github-actions/rust/cache-cargo@e034489c3a17ffaaaf7f8fb799156ce768d899d5 # v1.3.9
+        uses: firestoned/github-actions/rust/cache-cargo@f52366c4f57f0110012035ac1bcd0bee4075b3e9 # v1.4.0
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@ab6895351a88b908e96a4697860d4ffea5e57dbe # v2.87.27
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-llvm-cov
 
